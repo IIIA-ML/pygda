@@ -23,6 +23,7 @@ from .graphata import GraphATA
 from .sepa import SEPA
 from .dgsda import DGSDA
 from .tdss import TDSS
+from .dft import DFT
 
 __all__ = [
     "BaseGDA",
@@ -49,5 +50,6 @@ __all__ = [
     "GraphATA",
     "SEPA",
     "DGSDA",
-    "TDSS"
+    "TDSS",
+    "DFT"
 ]

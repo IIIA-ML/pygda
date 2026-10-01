@@ -41,9 +41,9 @@ def guassian_kernel(source, target, kernel_mul=2.0, kernel_num=5, fix_sigma=None
     """
     n_samples = int(source.size()[0]) + int(target.size()[0])
     total = torch.cat([source, target], dim=0)
-    total0 = total.unsqueeze(0).expand(int(total.size(0)), int(total.size(0)), int(total.size(1)))
-    total1 = total.unsqueeze(1).expand(int(total.size(0)), int(total.size(0)), int(total.size(1)))
-    L2_distance = ((total0-total1)**2).sum(2)
+    # Squared distances via norms keep memory at n^2 instead of n^2 * dim.
+    sq_norm = (total ** 2).sum(1)
+    L2_distance = (sq_norm[:, None] + sq_norm[None, :] - 2 * total @ total.t()).clamp_min(0)
     if fix_sigma:
         bandwidth = fix_sigma
     else:

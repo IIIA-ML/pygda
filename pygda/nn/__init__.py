@@ -24,6 +24,8 @@ from .soga_base import SOGABase
 from .node_centric_conv import NodeCentricConv, NodeCentricMLP
 from .graphata_base import GraphATABase
 from .dgsda_base import DGSDABase
+from .deprop_conv import DePropConv
+from .dft_base import DFTBase
 
 
 __all__ = [
@@ -53,5 +55,7 @@ __all__ = [
     "NodeCentricConv",
     "NodeCentricMLP",
     "GraphATABase",
-    "DGSDABase"
+    "DGSDABase",
+    "DePropConv",
+    "DFTBase"
 ]

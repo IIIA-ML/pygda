@@ -18,6 +18,7 @@ from torch_geometric.utils import to_dense_adj
 from . import BaseGDA
 from ..nn import ACDNEBase
 from ..utils import logger
+from ..utils import agg_tran_prob_mat, compute_ppmi, scale_sim_mat
 from ..metrics import eval_macro_f1, eval_micro_f1
 
 
@@ -377,99 +378,16 @@ class DMGNN(BaseGDA):
         return r 
 
     def agg_tran_prob_mat(self, g, step):
-        """
-        Compute aggregated k-step transition probability matrix.
+        """Aggregated K-step transition probabilities, see :func:`pygda.utils.agg_tran_prob_mat`."""
+        return agg_tran_prob_mat(g, step)
 
-        Parameters
-        ----------
-        g : scipy.sparse.csc_matrix
-            Input graph adjacency matrix.
-        step : int
-            Number of propagation steps.
-
-        Returns
-        -------
-        numpy.ndarray
-            Aggregated transition probability matrix.
-
-        Notes
-        -----
-        Implements iterative computation of transition probabilities
-        up to k steps, with step-wise normalization.
-        """
-        g = self.my_scale_sim_mat(g)
-        g = csc_matrix.toarray(g)
-        a_k = g
-        a = g
-        for k in np.arange(2, step+1):
-            a_k = np.matmul(a_k, g)
-            a = a+a_k/k
-        
-        return a
-    
     def my_scale_sim_mat(self, w):
-        """
-        Compute L1 row normalization of a matrix.
+        """L1 row normalization, see :func:`pygda.utils.scale_sim_mat`."""
+        return scale_sim_mat(w)
 
-        Parameters
-        ----------
-        w : numpy.ndarray or scipy.sparse.csc_matrix
-            Input similarity/adjacency matrix.
-
-        Returns
-        -------
-        numpy.ndarray or scipy.sparse.csc_matrix
-            Row-normalized matrix.
-
-        Notes
-        -----
-        Implementation details:
-
-        1. Computes row sums
-        2. Handles numerical stability with epsilon
-        3. Prevents infinite values
-        4. Applies row-wise normalization
-        """
-        rowsum = np.array(np.sum(w, axis=1), dtype=np.float32)
-        r_inv = np.power(rowsum + 1e-12, -1).flatten()
-        r_inv[np.isinf(r_inv)] = 0.
-        r_mat_inv = sp.diags(r_inv)
-        w = r_mat_inv.dot(w)
-        
-        return w
-    
     def compute_ppmi(self, a):
-        """
-        Compute Positive Pointwise Mutual Information matrix.
-
-        Parameters
-        ----------
-        a : numpy.ndarray
-            Aggregated transition probability matrix.
-
-        Returns
-        -------
-        numpy.ndarray
-            PPMI matrix with non-negative entries.
-
-        Notes
-        -----
-        1. Removes self-loops
-        2. Normalizes transition probabilities
-        3. Computes log-based PPMI values
-        4. Handles numerical stability
-        """
-        np.fill_diagonal(a, 0)
-        a = self.my_scale_sim_mat(a)
-        (p, q) = np.shape(a)
-        col = np.sum(a, axis=0)
-        col[col == 0] = 1
-        ppmi = np.log((float(p)*a) / (col[None, :]) + 1e-12)
-        idx_nan = np.isnan(ppmi)
-        ppmi[idx_nan] = 0
-        ppmi[ppmi < 0] = 0
-        
-        return ppmi
+        """PPMI matrix, see :func:`pygda.utils.compute_ppmi`."""
+        return compute_ppmi(a)
 
     def batch_ppmi(self, batch_size, shuffle_index_s, shuffle_index_t, ppmi_s, ppmi_t):
         """
