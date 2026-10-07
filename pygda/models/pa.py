@@ -305,15 +305,21 @@ class PairAlign(BaseGDA):
         if target_data.edge_weight is None:
             target_data.edge_weight = torch.ones(target_data.edge_index.shape[1]).to(self.device)
 
+        # The edge and label weights are written onto the graphs passed to
+        # forward_model and must persist across epochs, in the edge order of
+        # the full graph. A NeighborLoader hands out fresh copies each epoch
+        # (with reordered edges), so the updates would be discarded and
+        # PairAlign would reduce to its plain backbone. Train full-batch on
+        # the original graphs instead, as the reference implementation does.
         if self.batch_size == 0:
             self.source_batch_size = source_data.x.shape[0]
-            source_loader = NeighborLoader(source_data,
-                                self.num_neigh,
-                                batch_size=self.source_batch_size)
             self.target_batch_size = target_data.x.shape[0]
-            target_loader = NeighborLoader(target_data,
-                                self.num_neigh,
-                                batch_size=self.target_batch_size)
+            source_loader = [source_data]
+            target_loader = [target_data]
+        elif self.edge_rw or self.label_rw:
+            raise ValueError(
+                "PairAlign reweighting requires full-batch training (batch_size=0): "
+                "mini-batch copies do not carry the updated weights.")
         else:
             source_loader = NeighborLoader(source_data,
                                 self.num_neigh,
