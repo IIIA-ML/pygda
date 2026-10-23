@@ -8,6 +8,8 @@ import torch.nn.functional as F
 from torch_geometric.nn.conv.gcn_conv import gcn_norm
 from torch_geometric.transforms import AddLaplacianEigenvectorPE
 
+from torch_geometric.utils import get_laplacian
+
 from . import BaseGDA
 from ..nn import DFTBase
 from ..utils import logger, ppmi_edge_view
@@ -57,6 +59,13 @@ class DFT(BaseGDA):
         Use the graph transformer. Default: ``True``.
     pos_enc_dim : int, optional
         Dimension of the Laplacian positional encoding. Default: ``2``.
+    pe_solver : str, optional
+        Eigensolver of the positional encoding: ``"arpack"`` (PyG's
+        ``AddLaplacianEigenvectorPE``, random eigenvector signs) or
+        ``"dense"`` (full dense eigendecomposition, as in the reference
+        implementation). ARPACK can fail to converge when the graph has many
+        connected components, because the zero eigenvalue is then highly
+        degenerate. Default: ``"arpack"``.
     gt_layers : int, optional
         Number of graph transformer layers. Default: ``4``.
     gt_heads : int, optional
@@ -124,6 +133,7 @@ class DFT(BaseGDA):
         ppmi_step=3,
         transformer=True,
         pos_enc_dim=2,
+        pe_solver='arpack',
         gt_layers=4,
         gt_heads=1,
         critic_iters=10,
@@ -168,6 +178,9 @@ class DFT(BaseGDA):
         self.ppmi_step = ppmi_step
         self.transformer = transformer
         self.pos_enc_dim = pos_enc_dim
+        if pe_solver not in ('arpack', 'dense'):
+            raise ValueError(f"pe_solver must be 'arpack' or 'dense', got {pe_solver!r}.")
+        self.pe_solver = pe_solver
         self.gt_layers = gt_layers
         self.gt_heads = gt_heads
         self.critic_iters = critic_iters
@@ -370,7 +383,10 @@ class DFT(BaseGDA):
                 data.edge_index, data.num_nodes, self.ppmi_step)
 
         if self.transformer:
-            data = AddLaplacianEigenvectorPE(self.pos_enc_dim, attr_name='lap_pe', is_undirected=True)(data)
+            if self.pe_solver == 'dense':
+                data.lap_pe = dense_laplacian_pe(data.edge_index, data.num_nodes, self.pos_enc_dim)
+            else:
+                data = AddLaplacianEigenvectorPE(self.pos_enc_dim, attr_name='lap_pe', is_undirected=True)(data)
             data.lap_pe = data.lap_pe.to(self.device)
 
         return data
@@ -406,3 +422,21 @@ class DFT(BaseGDA):
             logits = self.dft.cls_model(self.dft.encode(processed))
 
         return logits, processed.y
+
+
+def dense_laplacian_pe(edge_index, num_nodes, k):
+    """
+    Laplacian eigenvector positional encoding by dense eigendecomposition.
+
+    As in the reference implementation: full eigendecomposition of the
+    symmetric normalized Laplacian, eigenvectors 2..k+1 of the smallest
+    eigenvalues, no sign randomization. Uses ``torch.linalg.eigh`` (the
+    Laplacian is symmetric) on the device of ``edge_index``, which always
+    converges and is fast on a GPU.
+    """
+    lap_index, lap_weight = get_laplacian(edge_index, None, normalization='sym', num_nodes=num_nodes)
+    lap = torch.zeros((num_nodes, num_nodes), dtype=torch.float64, device=edge_index.device)
+    lap[lap_index[0], lap_index[1]] = lap_weight.double()
+    eig_vals, eig_vecs = torch.linalg.eigh(lap)
+    eig_vecs = eig_vecs[:, eig_vals.argsort()]
+    return eig_vecs[:, 1:k + 1].float()
